@@ -1,0 +1,18 @@
+services:
+  dashboard:
+    build: .
+    # On native Linux, you can use network_mode: host instead of ports mapping.
+    # network_mode: host
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/monitoring.db
+      - PORT=8080
+    restart: unless-stopped
+    # If hostnames don't resolve via your router's DNS,
+    # uncomment and fill in the extra_hosts section below:
+    # extra_hosts:
+    #   - "my-server:192.168.1.10"
+    #   - "my-pi:192.168.1.20"
