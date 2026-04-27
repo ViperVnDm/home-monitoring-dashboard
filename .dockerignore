@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Node
+**/node_modules
+frontend/dist
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+
+# Local data — never bake into the image
+data/
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docker / build artifacts
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Docs / misc
+*.md

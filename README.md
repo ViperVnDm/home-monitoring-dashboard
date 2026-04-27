@@ -8,13 +8,53 @@ A self-hosted network monitoring dashboard built with **FastAPI + React**, packa
 
 ## Quick Start
 
+### Option A — Pull the prebuilt image from GHCR (recommended)
+
+A multi-arch image (`linux/amd64` + `linux/arm64`) is published to the GitHub Container Registry on every push to `master`. No build toolchain required on the host — works on x86 servers, Raspberry Pi, and Apple Silicon.
+
+Create a `docker-compose.yml` next to a `data/` directory:
+
+```yaml
+services:
+  dashboard:
+    image: ghcr.io/vipervndm/home-monitoring-dashboard:latest
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/monitoring.db
+      - PORT=8080
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+Then:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Open `http://localhost:8888` in your browser.
+
+> If the package is private, run `docker login ghcr.io` once on each host first (use a GitHub PAT with `read:packages` scope as the password).
+
+To upgrade to a new release: `docker compose pull && docker compose up -d`.
+
+### Option B — Build from source
+
 ```bash
 git clone https://github.com/ViperVnDm/home-monitoring-dashboard.git
 cd home-monitoring-dashboard
 docker compose up --build -d
 ```
 
-Open `http://localhost:8080` in your browser.
+Open `http://localhost:8888` in your browser.
 
 ```bash
 # View live logs
@@ -23,6 +63,8 @@ docker compose logs -f
 # Stop
 docker compose down
 ```
+
+> **Why port 8888?** Windows/Hyper-V reserves the 8076–8175 range for WSL2, which includes 8080. The compose file maps host port 8888 to the container's internal 8080 to avoid the conflict. On Linux you can change this back to `"8080:8080"` if preferred.
 
 ## Features
 
@@ -166,7 +208,9 @@ docker compose up -d
 
 ```
 Dockerfile                 -- multi-stage: node build -> python serve
-docker-compose.yml         -- single service, port 8080, ./data volume
+docker-compose.yml         -- single service, host port 8888 -> container 8080, ./data volume
+.github/workflows/
+  docker.yml               -- CI: builds and pushes multi-arch image to ghcr.io
 backend/
   main.py                  -- FastAPI app, API routes, SSE, export/import
   database.py              -- schema, migrations, all DB helpers
@@ -189,6 +233,7 @@ data/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/api/health` | Liveness probe (used by the container HEALTHCHECK) |
 | `GET` | `/api/services` | List all services with current status |
 | `POST` | `/api/services` | Add a new service |
 | `PUT` | `/api/services/:id` | Update a service |

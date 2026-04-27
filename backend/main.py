@@ -116,6 +116,11 @@ class ServicePauseBody(BaseModel):
 # API routes — services
 # ---------------------------------------------------------------------------
 
+@app.get("/api/health")
+async def api_health():
+    return {"status": "ok"}
+
+
 @app.get("/api/services")
 async def api_services():
     services = await get_services()
