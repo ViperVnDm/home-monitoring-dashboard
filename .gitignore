@@ -5,3 +5,4 @@ __pycache__/
 .env
 frontend/dist/
 .claude/settings.local.json
+.claude/*.*
