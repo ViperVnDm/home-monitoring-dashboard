@@ -739,3 +739,169 @@ body {
   color: var(--red);
   border: 1px solid rgba(248, 81, 73, 0.3);
 }
+
+/* ── Per-service pause button & dropdown ─────────────────── */
+.svc-pause-wrap {
+  position: relative;
+}
+
+/* Paused state — icon-btn turns amber */
+.icon-btn.svc-paused {
+  color: var(--orange);
+  border-color: rgba(210, 153, 34, 0.4);
+  background: rgba(210, 153, 34, 0.08);
+}
+
+.icon-btn.svc-paused:hover {
+  background: rgba(210, 153, 34, 0.18);
+  border-color: rgba(210, 153, 34, 0.6);
+  color: var(--orange);
+}
+
+/* Paused label in the Status metric column */
+.metric-value.svc-paused-label {
+  color: var(--orange);
+  font-size: 11px;
+}
+
+.svc-pause-dropdown {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  min-width: 160px;
+  padding: 4px;
+}
+
+/* Shared dropdown internals (reused by svc-pause-dropdown) */
+.pause-dropdown-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 6px 10px 3px;
+}
+
+.pause-dropdown-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.pause-dropdown-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.pause-dropdown-item:hover {
+  background: var(--surface-2);
+}
+
+.pause-dropdown-item.resume {
+  color: var(--green);
+}
+
+.pause-dropdown-item.resume:hover {
+  background: rgba(63, 185, 80, 0.1);
+}
+
+/* ── Mobile responsive ───────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Header */
+  .header {
+    padding: 10px 14px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .header-right {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* Hide verbose header items — keep: SSE dot, pause, add-service, settings */
+  .header-clock,
+  .export-btn,
+  .import-msg {
+    display: none;
+  }
+
+  .sse-label {
+    display: none;
+  }
+
+  .refresh-btn {
+    display: none;
+  }
+
+  /* Main content padding */
+  .main {
+    padding: 12px;
+  }
+
+  /* ── Service row — 2-line card layout ── */
+  .service-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    min-height: auto;
+    align-items: center;
+  }
+
+  /* Line 1: service info (grows) → enabled toggle → action buttons */
+  .service-info {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .service-enabled-wrap {
+    order: 2;
+    flex-shrink: 0;
+  }
+
+  .service-actions {
+    order: 3;
+    margin-left: 0;
+    flex-shrink: 0;
+  }
+
+  /* Invisible full-width flex item — forces line 2 to wrap */
+  .service-row::after {
+    content: '';
+    order: 4;
+    width: 100%;
+    height: 0;
+  }
+
+  /* Line 2: metrics | sparkline */
+  .service-metrics {
+    order: 5;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .metric {
+    min-width: 48px;
+  }
+
+  .sparkline-cell {
+    order: 6;
+    width: 80px;
+    min-width: 80px;
+    flex-shrink: 0;
+  }
+}

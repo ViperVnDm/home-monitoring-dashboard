@@ -34,7 +34,7 @@ from database import (
     set_setting,
     update_service,
 )
-from monitor import clear_status_cache, run_checks, warm_up_status_cache
+from monitor import clear_status_cache, get_service_pause_state, pause_service, resume_service, run_checks, warm_up_status_cache
 
 scheduler = AsyncIOScheduler()
 STATIC_DIR = Path(__file__).parent / "static"
@@ -106,6 +106,10 @@ class ImportBody(BaseModel):
     version: int = 1
     services: list[ImportServiceItem] = []
     settings: dict | None = None
+
+
+class ServicePauseBody(BaseModel):
+    duration_seconds: int
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +208,7 @@ async def api_uptime():
         up_checks = sum(b["up_count"] or 0 for b in db_buckets.values())
         uptime_pct = round(up_checks / total_checks * 100, 2) if total_checks else 0.0
 
+        pause_info = get_service_pause_state(svc["id"])
         result.append({
             "id": svc["id"],
             "name": svc["name"],
@@ -216,6 +221,8 @@ async def api_uptime():
             "current_status": latest[0] if latest else None,
             "current_response_ms": latest[1] if latest else None,
             "uptime_7d": uptime_pct,
+            "paused": pause_info["paused"],
+            "paused_remaining_seconds": pause_info["remaining_seconds"],
         })
 
     return result
@@ -380,6 +387,38 @@ async def api_import(body: ImportBody):
             await set_setting("webhook_type", body.settings["webhook_type"])
 
     return {"imported": imported, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# API routes — per-service pause
+# ---------------------------------------------------------------------------
+
+@app.post("/api/services/{id}/pause")
+async def api_pause_service(id: int, body: ServicePauseBody):
+    services = await get_services(enabled_only=False)
+    if not any(s["id"] == id for s in services):
+        raise HTTPException(status_code=404, detail="Service not found")
+    state = pause_service(id, body.duration_seconds)
+    await ev.broadcast("service_updated", {
+        "id": id,
+        "paused": state["paused"],
+        "paused_remaining_seconds": state["remaining_seconds"],
+    })
+    return state
+
+
+@app.delete("/api/services/{id}/pause")
+async def api_resume_service(id: int):
+    services = await get_services(enabled_only=False)
+    if not any(s["id"] == id for s in services):
+        raise HTTPException(status_code=404, detail="Service not found")
+    state = resume_service(id)
+    await ev.broadcast("service_updated", {
+        "id": id,
+        "paused": state["paused"],
+        "paused_remaining_seconds": state["remaining_seconds"],
+    })
+    return state
 
 
 # ---------------------------------------------------------------------------

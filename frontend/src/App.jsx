@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import ServiceModal from './components/ServiceModal'
 import SettingsModal from './components/SettingsModal'
 
@@ -47,6 +48,99 @@ function fmtDuration(startIso, endIso) {
   const hrs = Math.floor(mins / 60)
   const remMins = mins % 60
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`
+}
+
+function fmtRemaining(secs) {
+  if (!secs || secs <= 0) return ''
+  if (secs < 60) return `${secs}s`
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`
+  return `${Math.floor(secs / 3600)}h`
+}
+
+// ── Per-service pause button ────────────────────────────────────────────────
+
+const PAUSE_DURATIONS = [
+  { label: '5 minutes', seconds: 5 * 60 },
+  { label: '1 hour',    seconds: 60 * 60 },
+  { label: '1 day',     seconds: 24 * 60 * 60 },
+]
+
+function ServicePauseButton({ service, onPause, onResume }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const btnRef = useRef(null)
+  const dropRef = useRef(null)
+
+  function handleToggle() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      // Align dropdown right-edge to button right-edge; clamp so it never exits viewport
+      const DROPDOWN_W = 160
+      setPos({
+        top: rect.bottom + 4,
+        left: Math.max(8, rect.right - DROPDOWN_W),
+      })
+    }
+    setOpen(o => !o)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    function handle(e) {
+      if (btnRef.current?.contains(e.target) || dropRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [open])
+
+  const isPaused = service.paused === true
+  const remaining = service.paused_remaining_seconds || 0
+
+  const dropdown = open ? createPortal(
+    <div
+      ref={dropRef}
+      className="svc-pause-dropdown"
+      style={{ position: 'fixed', top: pos.top, left: pos.left }}
+    >
+      {isPaused && (
+        <>
+          <button
+            className="pause-dropdown-item resume"
+            onClick={() => { onResume(service.id); setOpen(false) }}
+          >
+            Resume now
+          </button>
+          <div className="pause-dropdown-sep" />
+        </>
+      )}
+      <div className="pause-dropdown-label">{isPaused ? 'Extend pause:' : 'Pause for:'}</div>
+      {PAUSE_DURATIONS.map(d => (
+        <button
+          key={d.seconds}
+          className="pause-dropdown-item"
+          onClick={() => { onPause(service.id, d.seconds); setOpen(false) }}
+        >
+          {d.label}
+        </button>
+      ))}
+    </div>,
+    document.body
+  ) : null
+
+  return (
+    <div className="svc-pause-wrap">
+      <button
+        ref={btnRef}
+        className={`icon-btn${isPaused ? ' svc-paused' : ''}`}
+        onClick={handleToggle}
+        title={isPaused ? `Paused \u2014 ${fmtRemaining(remaining)} remaining` : 'Pause checks for this service'}
+      >
+        {isPaused ? '\u25B6' : '\u23F8'}
+      </button>
+      {dropdown}
+    </div>
+  )
 }
 
 // ── Sparkline ───────────────────────────────────────────────────────────────
@@ -147,12 +241,13 @@ function serviceLink(svc) {
   return svc.url || `${svc.check_type}://${svc.host}${svc.port ? ':' + svc.port : ''}`
 }
 
-function ServiceRow({ service, sparklineData, onEdit, onDelete, incidents, incidentExpanded, onToggleIncident, onToggleEnabled }) {
+function ServiceRow({ service, sparklineData, onEdit, onDelete, incidents, incidentExpanded, onToggleIncident, onToggleEnabled, onPauseService, onResumeService }) {
   const raw = service.current_status
   const status = raw === 1 ? 'up' : raw === 0 ? 'down' : 'unknown'
   const link = serviceLink(service)
   const hostText = `${service.host}${service.port ? ':' + service.port : ''}`
   const isEnabled = service.enabled !== 0
+  const isPaused = service.paused === true
 
   return (
     <div className={`service-row-wrapper${isEnabled ? '' : ' service-disabled'}`}>
@@ -181,9 +276,15 @@ function ServiceRow({ service, sparklineData, onEdit, onDelete, incidents, incid
         <div className="service-metrics">
           <div className="metric">
             <div className="metric-label">Status</div>
-            <div className={`metric-value ${status}`}>
-              {status === 'up' ? 'UP' : status === 'down' ? 'DOWN' : '—'}
-            </div>
+            {isPaused ? (
+              <div className="metric-value svc-paused-label">
+                &#x23F8; {fmtRemaining(service.paused_remaining_seconds)}
+              </div>
+            ) : (
+              <div className={`metric-value ${status}`}>
+                {status === 'up' ? 'UP' : status === 'down' ? 'DOWN' : '—'}
+              </div>
+            )}
           </div>
           <div className="metric">
             <div className="metric-label">Response</div>
@@ -200,18 +301,23 @@ function ServiceRow({ service, sparklineData, onEdit, onDelete, incidents, incid
         <Sparkline data={sparklineData} />
 
         <div className="service-actions">
+          <ServicePauseButton
+            service={service}
+            onPause={onPauseService}
+            onResume={onResumeService}
+          />
           <button
             className={`icon-btn ${incidentExpanded ? 'active' : ''}`}
             onClick={onToggleIncident}
             title="Incident history"
           >
-            ⏱
+            &#x23F1;
           </button>
           <button className="icon-btn" onClick={onEdit} title="Edit service">
-            ✎
+            &#x270E;
           </button>
           <button className="icon-btn danger" onClick={onDelete} title="Delete service">
-            ✕
+            &#x2715;
           </button>
         </div>
       </div>
@@ -223,7 +329,7 @@ function ServiceRow({ service, sparklineData, onEdit, onDelete, incidents, incid
 
 // ── Service group ──────────────────────────────────────────────────────────
 
-function ServiceGroup({ name, services, sparklines, onEdit, onDelete, incidentCache, expandedIncidents, onToggleIncident, onToggleEnabled }) {
+function ServiceGroup({ name, services, sparklines, onEdit, onDelete, incidentCache, expandedIncidents, onToggleIncident, onToggleEnabled, onPauseService, onResumeService }) {
   return (
     <div className="group">
       <div className="group-header">
@@ -242,6 +348,8 @@ function ServiceGroup({ name, services, sparklines, onEdit, onDelete, incidentCa
             incidentExpanded={expandedIncidents.has(svc.id)}
             onToggleIncident={() => onToggleIncident(svc.id)}
             onToggleEnabled={() => onToggleEnabled(svc)}
+            onPauseService={onPauseService}
+            onResumeService={onResumeService}
           />
         ))}
       </div>
@@ -264,7 +372,7 @@ function Header({ lastUpdated, onRefresh, refreshing, onAddService, onSettings, 
   return (
     <header className="header">
       <div className="header-left">
-        <span className="header-icon">🏠</span>
+        <span className="header-icon">&#x1F3E0;</span>
         <span className="header-title">Home Monitor</span>
         {statusSummary.total > 0 && (
           <span className={`status-summary ${allUp ? 'all-up' : 'some-down'}`}>
@@ -275,7 +383,7 @@ function Header({ lastUpdated, onRefresh, refreshing, onAddService, onSettings, 
       <div className="header-right">
         <div className="sse-indicator">
           <span className={`sse-dot ${sseConnected ? 'connected' : ''}`} />
-          <span>{sseConnected ? 'Live' : 'Polling'}</span>
+          <span className="sse-label">{sseConnected ? 'Live' : 'Polling'}</span>
         </div>
         {lastUpdated && (
           <span className="header-clock">
@@ -286,16 +394,16 @@ function Header({ lastUpdated, onRefresh, refreshing, onAddService, onSettings, 
           {clock.toLocaleTimeString()}
         </span>
         <button className="refresh-btn" disabled={refreshing} onClick={onRefresh}>
-          {refreshing ? 'Refreshing…' : '↻ Refresh'}
+          {refreshing ? 'Refreshing…' : '\u21BB Refresh'}
         </button>
         <a className="export-btn" href="/api/export" download="services.csv" title="Export as CSV">
-          ↓ CSV
+          &#x2193; CSV
         </a>
         <a className="export-btn" href="/api/export/config" download="home-monitor-config.json" title="Export config for migration">
-          ↓ JSON
+          &#x2193; JSON
         </a>
         <button className="export-btn" onClick={onImport} title="Import config from JSON file">
-          ↑ Import
+          &#x2191; Import
         </button>
         {importMsg && (
           <span className={`import-msg ${importMsg.ok ? 'success' : 'error'}`}>
@@ -306,7 +414,7 @@ function Header({ lastUpdated, onRefresh, refreshing, onAddService, onSettings, 
           + Add Service
         </button>
         <button className="settings-btn" onClick={onSettings} title="Alert settings">
-          ⚙
+          &#x2699;
         </button>
       </div>
     </header>
@@ -315,7 +423,7 @@ function Header({ lastUpdated, onRefresh, refreshing, onAddService, onSettings, 
 
 // ── App ────────────────────────────────────────────────────────────────────
 
-const GROUP_ORDER = []  // Groups are sorted alphabetically; pin custom order here if needed
+const GROUP_ORDER = ['Plex NR Server', 'Network', 'NickPi5A', 'NICKPI5A', 'NickPi5B', 'NICKPI5B']
 
 export default function App() {
   const [data, setData] = useState([])
@@ -326,7 +434,6 @@ export default function App() {
   const [importMsg, setImportMsg] = useState(null)
   const importRef = useRef(null)
 
-  // New state
   const [modalService, setModalService] = useState(undefined)  // undefined=closed, null=add, obj=edit
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sparklines, setSparklines] = useState({})
@@ -334,6 +441,22 @@ export default function App() {
   const [incidentCache, setIncidentCache] = useState({})
   const [sseConnected, setSseConnected] = useState(false)
   const eventSourceRef = useRef(null)
+
+  // Countdown ticker — runs only when at least one service is paused
+  const anyPaused = data.some(s => s.paused)
+  useEffect(() => {
+    if (!anyPaused) return
+    const t = setInterval(() => {
+      setData(prev => prev.map(s => {
+        if (!s.paused) return s
+        const rem = Math.max(0, (s.paused_remaining_seconds || 0) - 1)
+        return rem === 0
+          ? { ...s, paused: false, paused_remaining_seconds: 0 }
+          : { ...s, paused_remaining_seconds: rem }
+      }))
+    }, 1000)
+    return () => clearInterval(t)
+  }, [anyPaused])
 
   const fetchData = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true)
@@ -479,9 +602,7 @@ export default function App() {
 
   async function handleToggleEnabled(svc) {
     const newEnabled = svc.enabled === 0 ? 1 : 0
-    // Optimistic update
     setData(prev => prev.map(s => s.id === svc.id ? { ...s, enabled: newEnabled } : s))
-    // Invalidate cached incidents so the panel reflects the new log entry
     setIncidentCache(c => { const n = { ...c }; delete n[svc.id]; return n })
     try {
       const res = await fetch(`/api/services/${svc.id}`, {
@@ -491,9 +612,40 @@ export default function App() {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     } catch {
-      // Revert on error
       setData(prev => prev.map(s => s.id === svc.id ? { ...s, enabled: svc.enabled } : s))
     }
+  }
+
+  async function handlePauseService(serviceId, seconds) {
+    try {
+      const r = await fetch(`/api/services/${serviceId}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration_seconds: seconds }),
+      })
+      if (r.ok) {
+        const state = await r.json()
+        setData(prev => prev.map(s =>
+          s.id === serviceId
+            ? { ...s, paused: state.paused, paused_remaining_seconds: state.remaining_seconds }
+            : s
+        ))
+      }
+    } catch {}
+  }
+
+  async function handleResumeService(serviceId) {
+    try {
+      const r = await fetch(`/api/services/${serviceId}/pause`, { method: 'DELETE' })
+      if (r.ok) {
+        const state = await r.json()
+        setData(prev => prev.map(s =>
+          s.id === serviceId
+            ? { ...s, paused: state.paused, paused_remaining_seconds: state.remaining_seconds }
+            : s
+        ))
+      }
+    } catch {}
   }
 
   function handleSaved() {
@@ -501,7 +653,6 @@ export default function App() {
     fetchData().then(services => {
       if (services) loadSparklines(services)
     })
-    // Refresh any open incident panels
     setIncidentCache({})
   }
 
@@ -559,6 +710,8 @@ export default function App() {
             expandedIncidents={expandedIncidents}
             onToggleIncident={handleToggleIncident}
             onToggleEnabled={handleToggleEnabled}
+            onPauseService={handlePauseService}
+            onResumeService={handleResumeService}
           />
         ))}
       </main>

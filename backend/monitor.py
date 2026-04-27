@@ -1,5 +1,4 @@
 import asyncio
-import ipaddress
 import time
 import aiohttp
 
@@ -14,14 +13,28 @@ from database import (
 )
 
 _last_status: dict[int, int] = {}  # service_id → last known status (0 or 1)
+_service_pause_until: dict[int, float] = {}  # service_id → wall-clock timestamp when pause expires
 
 
-def _is_ip_address(host: str) -> bool:
-    try:
-        ipaddress.ip_address(host)
-        return True
-    except ValueError:
-        return False
+def pause_service(service_id: int, seconds: int) -> dict:
+    _service_pause_until[service_id] = time.time() + seconds
+    return get_service_pause_state(service_id)
+
+
+def resume_service(service_id: int) -> dict:
+    _service_pause_until.pop(service_id, None)
+    return get_service_pause_state(service_id)
+
+
+def get_service_pause_state(service_id: int) -> dict:
+    until = _service_pause_until.get(service_id)
+    if until is None:
+        return {"paused": False, "remaining_seconds": 0}
+    remaining = until - time.time()
+    if remaining <= 0:
+        _service_pause_until.pop(service_id, None)
+        return {"paused": False, "remaining_seconds": 0}
+    return {"paused": True, "remaining_seconds": int(remaining)}
 
 
 async def warm_up_status_cache():
@@ -83,9 +96,8 @@ async def check_service(service: dict):
 
     if check_type in ("http", "https"):
         url = service.get("url") or f"{check_type}://{host}:{port}"
-        # Disable SSL verification for HTTPS checks against IP addresses
-        # (common for routers and appliances with self-signed certs)
-        verify_ssl = not (check_type == "https" and _is_ip_address(host))
+        # Disable SSL verification for known self-signed certs (Ubiquiti router)
+        verify_ssl = not (check_type == "https" and host == "192.168.13.1")
         return await check_http(url, verify_ssl=verify_ssl)
 
     if check_type == "tcp":
@@ -96,6 +108,12 @@ async def check_service(service: dict):
 
 async def _check_and_record(service: dict):
     sid = service["id"]
+
+    # Skip check if this service is paused
+    pause_state = get_service_pause_state(sid)
+    if pause_state["paused"]:
+        return
+
     try:
         status, response_ms, error = await check_service(service)
         await record_check(sid, status, response_ms, error)
